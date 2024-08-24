@@ -34,7 +34,7 @@ void LlmMathQuiz::answer()
     ui->b_answer->setEnabled(false);
     ui->e_answer->setReadOnly(true);
 
-    send("Compare two following answers. If they match, respond with '+', otherwise respond with '-'. Do not send any extra output.\n"
+    send("There are two answers provided. The first answer is the expected one and the second one is the provided one. If the provided answer is correct, respond with '+'. If the provided answer is not correct, respond with '-'. Do not send any extra output.\n"
          + m_answer + '\n'
          + ui->e_answer->text() + '\n');
 }
@@ -49,18 +49,38 @@ void LlmMathQuiz::newResponse(QNetworkReply *reply)
         if (!m_taskReceived) {
             QStringList data = response.split('\n');
             ui->e_task->setText(data[0]);
-            m_answer = data[1].isEmpty() ? data[2] : data[1];
-            ui->b_answer->setEnabled(true);
-            ui->e_answer->setReadOnly(false);
+            if (data.length() < 2 ||
+                    (data.length() == 2 && data[1].isEmpty())) {
+                ui->e_task->clear();
+                QMessageBox::critical(
+                            this,
+                            tr("Error"),
+                            tr("Invalid task generated.") );
+                ui->b_new->setEnabled(true);
+            } else {
+                m_answer = data[1].isEmpty() ? data[2] : data[1];
+                ui->b_answer->setEnabled(true);
+                ui->e_answer->setReadOnly(false);
+            }
         } else {
-            if (response == "+")
+            if (response == "+")  {
                 ++m_score;
+                QMessageBox::information(
+                            this,
+                            tr("Answer"),
+                            tr("Answer correct.") );
+            } else {
+                QMessageBox::warning(
+                            this,
+                            tr("Answer"),
+                            tr("Answer incorrect.") );
+            }
             ++m_tasks;
             if (m_tasks == 5) {
                 QMessageBox::information(
                             this,
                             tr("Score"),
-                            tr("Your score is " + QString::number(m_score).toUtf8()) );
+                            tr("Your score is " + QString::number(m_score).toUtf8() + "/" + QString::number(m_tasks).toUtf8()) );
                 m_score = 0;
                 m_tasks = 0;
             }
