@@ -6,9 +6,9 @@ LlmMathQuiz::LlmMathQuiz(QWidget *parent)
     , ui(new Ui::LlmMathQuiz)
 {
     ui->setupUi(this);
-    connect(ui->b_submit, &QPushButton::clicked, this, &LlmMathQuiz::submit);
-    connect(ui->b_generate, &QPushButton::clicked, this, &LlmMathQuiz::generate);
-    connect (m_manager, &QNetworkAccessManager::finished, this, &LlmMathQuiz::newAnswer);
+    connect(ui->b_new, &QPushButton::clicked, this, &LlmMathQuiz::newTask);
+    connect(ui->b_answer, &QPushButton::clicked, this, &LlmMathQuiz::answer);
+    connect(m_manager, &QNetworkAccessManager::finished, this, &LlmMathQuiz::newResponse);
 }
 
 LlmMathQuiz::~LlmMathQuiz()
@@ -16,65 +16,71 @@ LlmMathQuiz::~LlmMathQuiz()
     delete ui;
 }
 
-void LlmMathQuiz::submit()
+void LlmMathQuiz::newTask()
 {
-    if (ui->e_user->text().isEmpty())
+    ui->b_new->setEnabled(false);
+    ui->e_task->setText("Generating…");
+    ui->e_answer->clear();
+
+    send("Write a arithmetical or logical task with numbers not larger than 10 and not similar to previous tasks. Use one line for a task and one line for the answer for it. Do not add empty lines.");
+
+}
+
+void LlmMathQuiz::answer()
+{
+    if (ui->e_answer->text().isEmpty())
         return;
 
-    ui->e_llm->setText(m_llmAnswer);
-    ui->b_submit->setEnabled(false);
-    ui->e_user->setReadOnly(true);
+    ui->b_answer->setEnabled(false);
+    ui->e_answer->setReadOnly(true);
 
-    if (m_llmAnswer.contains(ui->e_user->text())) {
-        ui->l_matched->setText(QString::number(ui->l_matched->text().toInt() + 1));
-        ui->l_match->setText("True");
-    } else
-        ui->l_match->setText("False");
-
-    ui->b_generate->setEnabled(true);
-
-    if (ui->l_number->text().toInt() == 10)
-        ui->l_score->setText("Final score:");
+    send("Compare two following answers. If they match, respond with '+', otherwise respond with '-'. Do not send any extra output.\n"
+         + m_answer + '\n'
+         + ui->e_answer->text() + '\n');
 }
 
-void LlmMathQuiz::generate()
-{
-    if (m_taskReceived) {
-        m_taskReceived = false;
-        if (ui->l_number->text().toInt() == 10) {
-            ui->l_number->setText(QString::number(0));
-            ui->l_matched->setText(QString::number(0));
-            ui->l_score->setText("Answers matched:");
-        } else
-            ui->l_number->setText(QString::number(ui->l_number->text().toInt() + 1));
-    }
-    m_taskReceived = false;
-    ui->b_generate->setEnabled(false);
-    ui->e_task->setText("Generating…");
-    ui->e_user->clear();
-    ui->e_llm->clear();
-    ui->l_match->setText("Not checked");
-
-    sendPrompt("Generate a math task and a correct answer for it. The task can be anything from simple equations, to logical tasks. Both the task and the answer need to take only one line. Provide the task on the first line, and the answer on the second line. Never use equation 2x + 5 = 11.");
-}
-
-void LlmMathQuiz::newAnswer(QNetworkReply *reply)
+void LlmMathQuiz::newResponse(QNetworkReply *reply)
 {
     if (reply->error() == QNetworkReply::NoError) {
         QByteArray textReply = reply->readAll();
-        QStringList data = QJsonDocument::fromJson(textReply).object().value("response").toString().split('\n');
-        ui->e_task->setText(data[0]);
-        m_llmAnswer = data[1].isEmpty() ? data[2] : data[1];
-        m_taskReceived = true;
-        ui->b_submit->setEnabled(true);
-        ui->e_user->setReadOnly(false);
+        QJsonObject object = QJsonDocument::fromJson(textReply).object();
+        QString response = object.value("response").toString();
+        m_context = object.value("context").toString();
+        if (!m_taskReceived) {
+            QStringList data = response.split('\n');
+            ui->e_task->setText(data[0]);
+            m_answer = data[1].isEmpty() ? data[2] : data[1];
+            ui->b_answer->setEnabled(true);
+            ui->e_answer->setReadOnly(false);
+        } else {
+            if (response == "+")
+                ++m_score;
+            ++m_tasks;
+            if (m_tasks == 5) {
+                QMessageBox::information(
+                            this,
+                            tr("Score"),
+                            tr("Your score is " + QString::number(m_score).toUtf8()) );
+                m_score = 0;
+                m_tasks = 0;
+            }
+            ui->b_new->setEnabled(true);
+        }
+        m_taskReceived = !m_taskReceived;
     } else {
-        ui->e_task->setText("Error!");
-        ui->b_generate->setEnabled(true);
+        ui->e_task->clear();
+        QMessageBox::critical(
+                    this,
+                    tr("Error"),
+                    tr("Connection error.") );
+        if (m_taskReceived)
+            ui->b_answer->setEnabled(true);
+        else
+            ui->b_new->setEnabled(true);
     }
 }
 
-void LlmMathQuiz::sendPrompt(QString prompt)
+void LlmMathQuiz::send(QString prompt)
 {
     QNetworkRequest request(QUrl("http://127.0.0.1:11434/api/generate"));
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
@@ -83,6 +89,9 @@ void LlmMathQuiz::sendPrompt(QString prompt)
     json["model"] = "llama3.1:8b";
     json["prompt"] = prompt;
     json["stream"] = false;
+    if (!m_context.isEmpty())
+        json["context"] = m_context;
 
     m_manager->post(request, QJsonDocument(json).toJson());
 }
+

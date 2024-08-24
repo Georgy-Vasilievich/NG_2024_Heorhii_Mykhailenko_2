@@ -1,16 +1,15 @@
 #ifndef LLMMATHQUIZ_H
 #define LLMMATHQUIZ_H
 
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QMainWindow>
+#include <QMessageBox>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
-#include <QJsonObject>
-#include <QJsonDocument>
 
 QT_BEGIN_NAMESPACE
-namespace Ui {
-class LlmMathQuiz;
-}
+namespace Ui { class LlmMathQuiz; }
 QT_END_NAMESPACE
 
 class LlmMathQuiz : public QMainWindow
@@ -22,15 +21,18 @@ public:
     ~LlmMathQuiz();
 
 private slots:
-    void submit();
-    void generate();
-    void newAnswer(QNetworkReply *);
+    void newTask();
+    void answer();
+    void newResponse(QNetworkReply*);
 
 private:
-    void sendPrompt(QString);
     Ui::LlmMathQuiz *ui;
     QNetworkAccessManager *m_manager = new QNetworkAccessManager();
+    void send(QString);
+    QString m_context = "";
     bool m_taskReceived = false;
-    QString m_llmAnswer;
+    QString m_answer;
+    int m_tasks;
+    int m_score;
 };
 #endif // LLMMATHQUIZ_H
