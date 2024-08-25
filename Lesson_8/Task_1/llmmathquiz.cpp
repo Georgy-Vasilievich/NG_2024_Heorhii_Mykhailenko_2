@@ -34,9 +34,10 @@ void LlmMathQuiz::answer()
     ui->b_answer->setEnabled(false);
     ui->e_answer->setReadOnly(true);
 
-    send("There are two answers provided. The first answer is the expected one and the second one is the provided one. If the provided answer is correct, respond with '+'. If the provided answer is not correct, respond with '-'. Do not send any extra output.\n"
+    send("There are two answers provided\n"
          + m_answer + '\n'
-         + ui->e_answer->text() + '\n');
+         + ui->e_answer->text() + '\n'
+         + "If they are the same, respond with '+', and if they are not the same, respond with '-'. Do not send anything else.");
 }
 
 void LlmMathQuiz::newResponse(QNetworkReply *reply)
@@ -46,6 +47,7 @@ void LlmMathQuiz::newResponse(QNetworkReply *reply)
         QJsonObject object = QJsonDocument::fromJson(textReply).object();
         QString response = object.value("response").toString();
         m_context = object.value("context").toString();
+        bool error = false;
         if (!m_taskReceived) {
             QStringList data = response.split('\n');
             ui->e_task->setText(data[0]);
@@ -57,6 +59,7 @@ void LlmMathQuiz::newResponse(QNetworkReply *reply)
                             tr("Error"),
                             tr("Invalid task generated.") );
                 ui->b_new->setEnabled(true);
+                error = true;
             } else {
                 m_answer = data[1].isEmpty() ? data[2] : data[1];
                 ui->b_answer->setEnabled(true);
@@ -73,7 +76,7 @@ void LlmMathQuiz::newResponse(QNetworkReply *reply)
                 QMessageBox::warning(
                             this,
                             tr("Answer"),
-                            tr("Answer incorrect.") );
+                            tr("Answer incorrect. The correct answer is: " + m_answer.toUtf8()) );
             }
             ++m_tasks;
             if (m_tasks == 5) {
@@ -86,7 +89,8 @@ void LlmMathQuiz::newResponse(QNetworkReply *reply)
             }
             ui->b_new->setEnabled(true);
         }
-        m_taskReceived = !m_taskReceived;
+        if (!error)
+            m_taskReceived = !m_taskReceived;
     } else {
         ui->e_task->clear();
         QMessageBox::critical(
